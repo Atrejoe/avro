@@ -103,7 +103,7 @@ namespace Avro.Generic
         /// <typeparam name="T">The type of object to read. A single schema typically returns an object of a single .NET class.
         /// The only exception is UnionSchema, which can return a object of different types based on the branch selected.
         /// </typeparam>
-        /// <param name="reuse">If not null, the implemenation will try to use to return the object</param>
+        /// <param name="reuse">If not null, the implementation will try to use to return the object</param>
         /// <param name="decoder">The decoder for deserialization</param>
         /// <returns></returns>
         public T Read<T>(T reuse, Decoder decoder)
