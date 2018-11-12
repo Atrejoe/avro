@@ -68,6 +68,28 @@ namespace Avro.Test
 	]
 }
 ", new object[] { "schematest.SchemaObject", typeof(IList<object>) })]
+        [TestCase(@"  {
+   ""type"": ""record"",
+   ""name"": ""Key"",
+   ""namespace"": ""cargospot_test.cargospot_replica_global.dbo.AWB"",
+   ""fields"": [
+    {
+     ""name"": ""seq"",
+     ""type"": {
+      ""type"": ""bytes"",
+      ""scale"": 0,
+      ""precision"": 9,
+      ""logicalType"": ""decimal""
+     }
+    },
+    {
+     ""name"": ""source"",
+     ""type"": ""string""
+    }
+   ],
+   ""connect.name"": ""cargospot_test.cargospot_replica_global.dbo.AWB.Key""
+  }
+", new object[] { "cargospot_test.cargospot_replica_global.dbo.AWB.Key", typeof(decimal), typeof(string) })]
         public static void TestCodeGen(string str, object[] result)
         {
             Schema schema = Schema.Parse(str);
