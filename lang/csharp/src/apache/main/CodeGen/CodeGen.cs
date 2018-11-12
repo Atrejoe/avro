@@ -1,3 +1,4 @@
+using Microsoft.CSharp;
 /**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -555,7 +556,13 @@ namespace Avro
             {
                 // Determine type of field
                 bool nullibleEnum = false;
-                string baseType = getType(field.Schema, false, ref nullibleEnum);
+
+                var nullible = field.Schema.Props != null
+                    && field.Schema.Props.TryGetValue("default", out var defaultValue)
+                    && "null".Equals(defaultValue);
+
+                string baseType = getType(field.Schema, nullible, ref nullibleEnum);
+
                 var ctrfield = new CodeTypeReference(baseType);
 
                 // Create field
@@ -617,6 +624,24 @@ namespace Avro
                     putFieldStmt.Append(type);
                     putFieldStmt.Append(")fieldValue; break;\n");
                 }
+                else if (
+                    baseType.Equals(typeof(decimal).ToString())
+                    ||
+                    baseType.Equals($"{typeof(decimal)}?")
+                    )
+                {
+                    var scale = 0;
+
+                    if (field.Schema != null
+                        && field.Schema.Props != null
+                        && field.Schema.Props.TryGetValue("scale", out var strScale))
+                        int.TryParse(strScale, out scale);
+
+                    putFieldStmt.Append(" = ((");
+                    //putFieldStmt.Append(baseType);
+                    putFieldStmt.Append("System.Byte[]");
+                    putFieldStmt.Append($")fieldValue).ToDecimal({scale}){(nullible ? "" : ".Value")}; break;\n");
+                }
                 else
                 {
                     putFieldStmt.Append(" = (");
@@ -676,7 +701,14 @@ namespace Avro
                     else return typeof(double).ToString();
 
                 case Schema.Type.Bytes:
-                    return typeof(byte[]).ToString();
+                    {
+                        if (schema.Props != null
+                        && schema.Props.TryGetValue("logicalType", out var logicalType)
+                        && logicalType.Equals("\"decimal\"", StringComparison.InvariantCultureIgnoreCase))
+                            return $"{typeof(decimal)}{(nullible?"?":"")}";
+                        else
+                            return typeof(byte[]).ToString();
+                    }
                 case Schema.Type.String:
                     return typeof(string).ToString();
 

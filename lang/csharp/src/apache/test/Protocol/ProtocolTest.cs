@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -105,7 +105,34 @@ namespace Avro.Test
    } ,
    {
 	""type"" : ""int""
-   }
+   },
+  {
+   ""type"": ""record"",
+   ""name"": ""Key"",
+   ""namespace"": ""cargospot_test.cargospot_replica_global.dbo.AWB"",
+   ""fields"": [
+    {
+     ""name"": ""seq"",
+     ""type"": {
+      ""type"": ""bytes"",
+      ""scale"": 0,
+      ""precision"": 9,
+      ""connect.version"": 1,
+      ""connect.parameters"": {
+       ""scale"": ""0"",
+       ""connect.decimal.precision"": ""9""
+      },
+      ""connect.name"": ""org.apache.kafka.connect.data.Decimal"",
+      ""logicalType"": ""decimal""
+     }
+    },
+    {
+     ""name"": ""source"",
+     ""type"": ""string""
+    }
+   ],
+   ""connect.name"": ""cargospot_test.cargospot_replica_global.dbo.AWB.Key""
+  }
    ]
 }", true)]
         [TestCase(@"{
