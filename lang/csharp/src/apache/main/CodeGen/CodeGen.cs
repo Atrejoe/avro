@@ -376,7 +376,7 @@ namespace Avro
                     builder.Append("\n\t\t\t\tcase \"").Append(a.Key).Append("\":\n");
 
                     bool unused = false;
-                    string type = getType(a.Value.Response, false, ref unused);
+                    string type = getType(a.Value.Response, false, ref unused, out LogicalType? unused2);
 
                     builder.Append("\t\t\t\trequestor.Request<")
                            .Append(type)
@@ -465,7 +465,7 @@ namespace Avro
                 else
                 {
                     bool ignored = false;
-                    string type = getType(response, false, ref ignored);
+                    string type = getType(response, false, ref ignored, out var ignored2);
 
                     messageMember.ReturnType = new CodeTypeReference(type);
                 }
@@ -473,7 +473,7 @@ namespace Avro
                 foreach (Field field in message.Request.Fields)
                 {
                     bool ignored = false;
-                    string type = getType(field.Schema, false, ref ignored);
+                    string type = getType(field.Schema, false, ref ignored, out LogicalType? ignored3);
 
                     string fieldName = CodeGenUtil.Instance.Mangle(field.Name);
                     var parameter = new CodeParameterDeclarationExpression(type, fieldName);
@@ -483,7 +483,7 @@ namespace Avro
                 if (generateCallback)
                 {
                     bool unused = false;
-                    var type = getType(response, false, ref unused);
+                    var type = getType(response, false, ref unused, out var ignored4);
                     var parameter = new CodeParameterDeclarationExpression("Avro.IO.ICallback<" + type + ">",
                                                                            "callback");
                     messageMember.Parameters.Add(parameter);
@@ -556,11 +556,16 @@ namespace Avro
                 // Determine type of field
                 bool nullibleEnum = false;
 
-                var nullible = field.Schema.Props != null
-                    && field.Schema.Props.TryGetValue("default", out var defaultValue)
-                    && "null".Equals(defaultValue);
+                bool nullible = ((field.Schema.Props != null
+                    && field.Schema.Props.TryGetValue("default", out string defaultValue)
+                    && "null".Equals(defaultValue))
+                    ||
+                    (field.Schema != null
+                    && field.Schema is UnionSchema us
+                    && us != null
+                    && us.Schemas.Any(x => x.Tag == Schema.Type.Null)));
 
-                string baseType = getType(field.Schema, nullible, ref nullibleEnum);
+                string baseType = getType(field.Schema, nullible, ref nullibleEnum, out LogicalType? logicalType);
 
                 var ctrfield = new CodeTypeReference(baseType);
 
@@ -603,6 +608,42 @@ namespace Avro
                 getFieldStmt.Append(field.Pos);
                 getFieldStmt.Append(": return this.");
                 getFieldStmt.Append(mangledName);
+
+                if (logicalType.HasValue)
+                {
+                    string conversionMethod;
+                    switch (logicalType.Value)
+                    {
+                        case LogicalType.Decimal:
+                            //Decimal to Byte Array
+                            conversionMethod = GetDecimalConversionMethod(field, toDecimal: false);
+                            break;
+                        case LogicalType.Date:
+                            //DateTime to Int (days)
+                            conversionMethod = "ToInt()";
+                            break;
+                        case LogicalType.Time_Millis:
+                            //Int (milliseconds) to TimeSpan
+                            conversionMethod = "ToInt()";
+                            break;
+                        case LogicalType.Time_Micros:
+                            //Long (microseconds) to TimeSpan
+                            conversionMethod = "ToLong()";
+                            break;
+                        case LogicalType.Timestamp_Millis:
+                            //Long (microseconds) to DateTime
+                            conversionMethod = "ToLong()";
+                            break;
+                        case LogicalType.Timestamp_Micros:
+                            //Long (microseconds) to DateTime
+                            conversionMethod = "ToLongMicroseconds()";
+                            break;
+                        case LogicalType.Duration:
+                        default:
+                            throw new NotImplementedException($"Logical type {logicalType.Value} not implemented");
+                    }
+                    getFieldStmt.Append($".{conversionMethod}");
+                }
                 getFieldStmt.Append(";\n");
 
                 // add to Put()
@@ -623,23 +664,50 @@ namespace Avro
                     putFieldStmt.Append(type);
                     putFieldStmt.Append(")fieldValue; break;\n");
                 }
-                else if (
-                    baseType.Equals(typeof(decimal).ToString())
-                    ||
-                    baseType.Equals($"{typeof(decimal)}?")
-                    )
+                else if (logicalType.HasValue)
                 {
-                    var scale = 0;
-
-                    if (field.Schema != null
-                        && field.Schema.Props != null
-                        && field.Schema.Props.TryGetValue("scale", out var strScale))
-                        int.TryParse(strScale, out scale);
+                    string conversionMethod;
+                    string intermediateType;
+                    switch (logicalType.Value)
+                    {
+                        case LogicalType.Decimal:
+                            //Byte Array to Decimal
+                            intermediateType = $"{typeof(Byte)}[]";
+                            conversionMethod = GetDecimalConversionMethod(field, toDecimal: true);
+                            break;
+                        case LogicalType.Date:
+                            //Int (days) to DateTime
+                            intermediateType = $"{typeof(int)}{(nullible?"?":"")}";
+                            conversionMethod = "ToDate()";
+                            break;
+                        case LogicalType.Time_Millis:
+                            //Int (milliseconds) to TimeSpan
+                            intermediateType = $"{typeof(int)}{(nullible ? "?" : "")}";
+                            conversionMethod = "ToTimeSpan()";
+                            break;
+                        case LogicalType.Time_Micros:
+                            //Long (microseconds) to TimeSpan
+                            intermediateType = $"{typeof(long)}{(nullible ? "?" : "")}";
+                            conversionMethod = "ToTimeSpan()";
+                            break;
+                        case LogicalType.Timestamp_Millis:
+                            //Long (microseconds) to DateTime
+                            intermediateType = $"{typeof(long)}{(nullible ? "?" : "")}";
+                            conversionMethod = "ToDateTime()";
+                            break;
+                        case LogicalType.Timestamp_Micros:
+                            //Long (microseconds) to DateTime
+                            intermediateType = $"{typeof(long)}{(nullible ? "?" : "")}";
+                            conversionMethod = "ToDateTimeFromMicroseconds()";
+                            break;
+                        case LogicalType.Duration:
+                        default:
+                            throw new NotImplementedException($"Logical type {logicalType.Value} not implemented");
+                    }
 
                     putFieldStmt.Append(" = ((");
-                    //putFieldStmt.Append(baseType);
-                    putFieldStmt.Append("System.Byte[]");
-                    putFieldStmt.Append($")fieldValue).ToDecimal({scale}){(nullible ? "" : ".Value")}; break;\n");
+                    putFieldStmt.Append(intermediateType);
+                    putFieldStmt.Append($")fieldValue).{conversionMethod}{(nullible ? "" : ".Value")}; break;\n");
                 }
                 else
                 {
@@ -649,6 +717,7 @@ namespace Avro
                 }
             }
 
+            System.Diagnostics.Trace.WriteLine($"{putFieldStmt}{getFieldStmt}");
             // end switch block for Get()
             getFieldStmt.Append("\t\t\tdefault: throw new AvroRuntimeException(\"Bad index \" + fieldPos + \" in Get()\");\n\t\t\t}");
             var cseGet = new CodeSnippetExpression(getFieldStmt.ToString());
@@ -671,14 +740,76 @@ namespace Avro
             return ctd;
         }
 
+        private static string GetDecimalConversionMethod(Field field, bool toDecimal)
+        {
+            int scale = 0;
+            if (field.Schema != null
+                && field.Schema.Props != null
+                && field.Schema.Props.TryGetValue("scale", out string strScale))
+            {
+                scale = int.Parse(strScale);
+            }
+            else if (field.Schema != null && field.Schema is UnionSchema unionSchema)
+            {
+                Schema s = unionSchema.Schemas.Single(x => x.Tag == Schema.Type.Bytes);
+                if (s.Props != null
+                && s.Props.TryGetValue("scale", out string strScale2))
+                {
+                    scale = int.Parse(strScale2);
+                }
+            }
+
+            return toDecimal ?
+                        $"ToDecimal({scale})"
+                        : $"ToBytes({scale})";
+        }
+
+        /// <summary>
+        /// Logical types as defined at <a href="http://avro.apache.org/docs/current/spec.html#schema_complex">avro.apache.org/docs</a>
+        /// </summary>
+        public enum LogicalType
+        {
+            Decimal,
+            Date,
+            Time_Millis,
+            Time_Micros,
+            Timestamp_Millis,
+            Timestamp_Micros,
+            Duration,
+        }
+        public enum ConnectName
+        {
+            Timestamp = LogicalType.Timestamp_Millis,
+        }
+
         /// <summary>
         /// Gets the string representation of the schema's data type
         /// </summary>
         /// <param name="schema">schema</param>
         /// <param name="nullible">flag to indicate union with null</param>
         /// <returns></returns>
-        internal static string getType(Schema schema, bool nullible, ref bool nullibleEnum)
+        internal static string getType(Schema schema, bool nullible, ref bool nullibleEnum, out LogicalType? logicalType)
         {
+            //Determine any logical type based on official Avro notation
+            if (schema.Props != null
+             && schema.Props.TryGetValue("logicalType", out string logicalTypeValue)
+             && !string.IsNullOrWhiteSpace(logicalTypeValue))
+                logicalType = (LogicalType)Enum.Parse(typeof(LogicalType), logicalTypeValue.Trim('"').Replace("-", "_"), true);
+
+            //Fallback: determine any logical type based on Kafkas.Connect notation
+            else if (schema.Props != null
+             && schema.Props.TryGetValue("connect.name", out string connectName)
+             && !string.IsNullOrWhiteSpace(connectName))
+            {
+                string connectSimpleName = connectName.Trim('"').Split('.').Last();
+
+                logicalType = (LogicalType)Enum.Parse(typeof(ConnectName), connectSimpleName.Replace("-", "_"), true);
+            }
+            else
+            {
+                logicalType = null;
+            }
+
             switch (schema.Tag)
             {
                 case Schema.Type.Null:
@@ -687,9 +818,31 @@ namespace Avro
                     if (nullible) return "System.Nullable<bool>";
                     else return typeof(bool).ToString();
                 case Schema.Type.Int:
-                    if (nullible) return "System.Nullable<int>";
+                    if (logicalType.HasValue)
+                        switch (logicalType.Value)
+                        {
+                            case LogicalType.Date:
+                                return $"{typeof(DateTime)}{(nullible ? "?" : "")}";
+                            case LogicalType.Time_Millis:
+                                return $"{typeof(TimeSpan)}{(nullible ? "?" : "")}";
+                            default:
+                                throw new ArgumentException($"Logical type {logicalType} is invalid for schema type {schema.Tag}", "logicalType");
+                        }
+                    else if (nullible) return "System.Nullable<int>";
                     else return typeof(int).ToString();
                 case Schema.Type.Long:
+                    if (logicalType.HasValue)
+                        switch (logicalType.Value)
+                        {
+                            case LogicalType.Time_Micros:
+                                return $"{typeof(TimeSpan)}{(nullible ? "?" : "")}";
+                            case LogicalType.Timestamp_Millis:
+                                return $"{typeof(DateTime)}{(nullible ? "?" : "")}";
+                            case LogicalType.Timestamp_Micros:
+                                return $"{typeof(DateTime)}{(nullible ? "?" : "")}";
+                            default:
+                                throw new ArgumentException($"Logical type {logicalType} is invalid for schema type {schema.Tag}", "logicalType");
+                        }
                     if (nullible) return "System.Nullable<long>";
                     else return typeof(long).ToString();
                 case Schema.Type.Float:
@@ -700,14 +853,17 @@ namespace Avro
                     else return typeof(double).ToString();
 
                 case Schema.Type.Bytes:
-                    {
-                        if (schema.Props != null
-                        && schema.Props.TryGetValue("logicalType", out var logicalType)
-                        && logicalType.Equals("\"decimal\"", StringComparison.InvariantCultureIgnoreCase))
-                            return $"{typeof(decimal)}{(nullible?"?":"")}";
-                        else
-                            return typeof(byte[]).ToString();
-                    }
+                    if (logicalType.HasValue)
+                        switch (logicalType.Value)
+                        {
+                            case LogicalType.Decimal:
+                                return $"{typeof(decimal)}{(nullible ? "?" : "")}";
+                            default:
+                                throw new ArgumentException($"Logical type {logicalType} is invalid for schema type {schema.Tag}", "logicalType");
+                        }
+                    else
+                        return typeof(byte[]).ToString();
+
                 case Schema.Type.String:
                     return typeof(string).ToString();
 
@@ -735,13 +891,13 @@ namespace Avro
                     if (null == arraySchema)
                         throw new CodeGenException("Unable to cast schema into an array schema");
 
-                    return "IList<" + getType(arraySchema.ItemSchema, false, ref nullibleEnum) + ">";
+                    return "IList<" + getType(arraySchema.ItemSchema, false, ref nullibleEnum, out logicalType) + ">";
 
                 case Schema.Type.Map:
                     var mapSchema = schema as MapSchema;
                     if (null == mapSchema)
                         throw new CodeGenException("Unable to cast schema into a map schema");
-                    return "IDictionary<string," + getType(mapSchema.ValueSchema, false, ref nullibleEnum) + ">";
+                    return "IDictionary<string," + getType(mapSchema.ValueSchema, false, ref nullibleEnum, out logicalType) + ">";
 
                 case Schema.Type.Union:
                     var unionSchema = schema as UnionSchema;
@@ -751,7 +907,7 @@ namespace Avro
                     if (null == nullibleType)
                         return CodeGenUtil.Object;
                     else
-                        return getType(nullibleType, true, ref nullibleEnum);
+                        return getType(nullibleType, true, ref nullibleEnum, out logicalType);
             }
             throw new CodeGenException("Unable to generate CodeTypeReference for " + schema.Name + " type " + schema.Tag);
         }
@@ -860,7 +1016,7 @@ namespace Avro
                 var ns = nsc[i];
 
                 string dir = Path.Combine(
-                    outputdir, 
+                    outputdir,
                     Path.Combine(CodeGenUtil.Instance.UnMangle(ns.Name).Split('.')));
                 Directory.CreateDirectory(dir);
 

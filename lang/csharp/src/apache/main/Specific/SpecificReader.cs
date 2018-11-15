@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -264,7 +264,7 @@ namespace Avro.Specific
         protected virtual string getTargetType(Schema schema)
         {
             bool nEnum = false;
-            string type = Avro.CodeGen.getType(schema, false, ref nEnum);
+            string type = Avro.CodeGen.getType(schema, false, ref nEnum, out var ignored);
             if (schema.Tag == Schema.Type.Array)
             {
                 type = type.Remove(0, 6);              // remove IList<
