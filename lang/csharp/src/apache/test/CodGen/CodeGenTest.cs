@@ -77,7 +77,7 @@ namespace Avro.Test
      ""name"": ""seq"",
      ""type"": {
       ""type"": ""bytes"",
-      ""scale"": 0,
+      ""scale"": 2,
       ""precision"": 9,
       ""logicalType"": ""decimal""
      }
@@ -85,7 +85,38 @@ namespace Avro.Test
     {
      ""name"": ""source"",
      ""type"": ""string""
-    }
+    },
+    {
+        ""name"": ""value_customs"",
+        ""type"": [
+            ""null"",
+            {
+                ""type"": ""bytes"",
+                ""scale"": 2,
+                ""precision"": 11,
+                ""connect.version"": 1,
+                ""connect.parameters"": {
+                    ""scale"": ""2"",
+                    ""connect.decimal.precision"": ""11""
+                },
+                ""connect.name"": ""org.apache.kafka.connect.data.Decimal"",
+                ""logicalType"": ""decimal""
+            }
+        ],
+        ""default"": null
+    },
+    {
+        ""name"": ""prorate_date"",
+        ""type"": [
+            ""null"",
+            {
+                ""type"": ""long"",
+                ""connect.version"": 1,
+                ""connect.name"": ""io.debezium.time.Timestamp""
+            }
+        ],
+        ""default"": null
+    },
    ],
    ""connect.name"": ""cargospot_test.cargospot_replica_global.dbo.AWB.Key""
   }
