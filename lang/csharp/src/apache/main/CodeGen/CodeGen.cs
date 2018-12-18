@@ -623,20 +623,28 @@ namespace Avro
                             conversionMethod = "ToInt()";
                             break;
                         case LogicalType.Time_Millis:
-                            //Int (milliseconds) to TimeSpan
+                            //TimeSpan to Int (milliseconds within the day)
                             conversionMethod = "ToInt()";
                             break;
                         case LogicalType.Time_Micros:
-                            //Long (microseconds) to TimeSpan
+                            //TimeSpan to Long (microseconds within the day)
                             conversionMethod = "ToLong()";
                             break;
+                        case LogicalType.Time_Nanos:
+                            //TimeSpan to Long (nanoseconds within the day)
+                            conversionMethod = "ToLongNanoSeconds()";
+                            break;
                         case LogicalType.Timestamp_Millis:
-                            //Long (microseconds) to DateTime
+                            //DateTime to Long (milliseconds since epoch)
                             conversionMethod = "ToLong()";
                             break;
                         case LogicalType.Timestamp_Micros:
-                            //Long (microseconds) to DateTime
-                            conversionMethod = "ToLongMicroseconds()";
+                            //DateTime to Long (microseconds since epoch)
+                            conversionMethod = "ToLongMicroSeconds()";
+                            break;
+                        case LogicalType.Timestamp_Nanos:
+                            //DateTime to Long (nanoseconds since epoch)
+                            conversionMethod = "ToLongNanoSeconds()";
                             break;
                         case LogicalType.Duration:
                         default:
@@ -668,37 +676,52 @@ namespace Avro
                 {
                     string conversionMethod;
                     string intermediateType;
+
+                    bool intermediatTypeIsReferenceType = false;
+
                     switch (logicalType.Value)
                     {
                         case LogicalType.Decimal:
                             //Byte Array to Decimal
                             intermediateType = $"{typeof(Byte)}[]";
                             conversionMethod = GetDecimalConversionMethod(field, toDecimal: true);
+                            intermediatTypeIsReferenceType = true;
+
                             break;
                         case LogicalType.Date:
-                            //Int (days) to DateTime
-                            intermediateType = $"{typeof(int)}{(nullible?"?":"")}";
+                            //Int (days since epoch) to DateTime
+                            intermediateType = $"{typeof(int)}{(nullible ? "?" : "")}";
                             conversionMethod = "ToDate()";
                             break;
                         case LogicalType.Time_Millis:
-                            //Int (milliseconds) to TimeSpan
+                            //Int (milliseconds within a day) to TimeSpan
                             intermediateType = $"{typeof(int)}{(nullible ? "?" : "")}";
                             conversionMethod = "ToTimeSpan()";
                             break;
                         case LogicalType.Time_Micros:
-                            //Long (microseconds) to TimeSpan
+                            //Long (microseconds within a day) to TimeSpan
                             intermediateType = $"{typeof(long)}{(nullible ? "?" : "")}";
                             conversionMethod = "ToTimeSpan()";
                             break;
+                        case LogicalType.Time_Nanos:
+                            //Long (nanoseconds within a day) to TimeSpan
+                            intermediateType = $"{typeof(long)}{(nullible ? "?" : "")}";
+                            conversionMethod = "ToTimeSpanFromNanoSeconds()";
+                            break;
                         case LogicalType.Timestamp_Millis:
-                            //Long (microseconds) to DateTime
+                            //Long (microseconds since epoch) to DateTime
                             intermediateType = $"{typeof(long)}{(nullible ? "?" : "")}";
                             conversionMethod = "ToDateTime()";
                             break;
                         case LogicalType.Timestamp_Micros:
-                            //Long (microseconds) to DateTime
+                            //Long (microseconds since epoch) to DateTime
                             intermediateType = $"{typeof(long)}{(nullible ? "?" : "")}";
-                            conversionMethod = "ToDateTimeFromMicroseconds()";
+                            conversionMethod = "ToDateTimeFromMicroSeconds()";
+                            break;
+                        case LogicalType.Timestamp_Nanos:
+                            //Long (nanoseconds since epoch) to DateTime
+                            intermediateType = $"{typeof(long)}{(nullible ? "?" : "")}";
+                            conversionMethod = "ToDateTimeFromNanoSeconds()";
                             break;
                         case LogicalType.Duration:
                         default:
@@ -707,7 +730,11 @@ namespace Avro
 
                     putFieldStmt.Append(" = ((");
                     putFieldStmt.Append(intermediateType);
-                    putFieldStmt.Append($")fieldValue).{conversionMethod}{(nullible ? "" : ".Value")}; break;\n");
+
+                    if (intermediatTypeIsReferenceType)
+                        putFieldStmt.Append($")fieldValue).{conversionMethod}{(nullible ? "" : ".Value")}; break;\n");
+                    else
+                        putFieldStmt.Append($")fieldValue).{conversionMethod}; break;\n"); //conversion method should return a type of the same nullability as the input (which is a value type)
                 }
                 else
                 {
@@ -776,10 +803,23 @@ namespace Avro
             Timestamp_Millis,
             Timestamp_Micros,
             Duration,
+
+            Time_Nanos,//Unofficial: some Kafka connect providers support 100 nanosec precision times.
+            Timestamp_Nanos, //Unofficial: some Kafka connect providers support 100 nanosec precision datetime.
         }
+
+        /// <summary>
+        /// Known Kafka connect names, which are mapped to <see cref="LogicalType"/>
+        /// </summary>
+        /// <remarks>
+        /// See also <a href="https://debezium.io/docs/connectors/sqlserver/#data-types">Debezium SQL server documentation</a>
+        /// </remarks>
         public enum ConnectName
         {
             Timestamp = LogicalType.Timestamp_Millis,
+            MicroTimestamp = LogicalType.Timestamp_Micros,
+            NanoTimestamp = LogicalType.Timestamp_Nanos,
+            NanoTime = LogicalType.Timestamp_Nanos
         }
 
         /// <summary>
@@ -836,9 +876,13 @@ namespace Avro
                         {
                             case LogicalType.Time_Micros:
                                 return $"{typeof(TimeSpan)}{(nullible ? "?" : "")}";
+                            case LogicalType.Time_Nanos:
+                                return $"{typeof(TimeSpan)}{(nullible ? "?" : "")}";
                             case LogicalType.Timestamp_Millis:
                                 return $"{typeof(DateTime)}{(nullible ? "?" : "")}";
                             case LogicalType.Timestamp_Micros:
+                                return $"{typeof(DateTime)}{(nullible ? "?" : "")}";
+                            case LogicalType.Timestamp_Nanos:
                                 return $"{typeof(DateTime)}{(nullible ? "?" : "")}";
                             default:
                                 throw new ArgumentException($"Logical type {logicalType} is invalid for schema type {schema.Tag}", "logicalType");
